@@ -1,23 +1,27 @@
 import streamlit as st
 import pandas as pd
+import os   # ✅ ADD HERE
 
 st.title("🚕 Taxi Data Dashboard")
 
 @st.cache_data
-def load_data():
-    return pd.read_parquet("../data/processed/taxi_data")
+def load_data():   # ✅ REPLACE your existing function with this
+    path = "../data/processed/taxi_data"
 
+    st.write("Current working dir:", os.getcwd())
+    st.write(
+        "Files here:",
+        os.listdir("../data/processed") if os.path.exists("../data/processed") else "No folder"
+    )
+
+    if not os.path.exists(path):
+        st.error(f"Path not found: {path}")
+        return pd.DataFrame()
+
+    return pd.read_parquet(path)
+
+
+# ✅ This stays as is
 df = load_data()
 
-st.subheader("📊 Sample Data")
-st.dataframe(df)
-
-st.subheader("📈 Trip Distance Distribution")
-st.bar_chart(df["trip_distance"].value_counts().head(20))
-
-st.subheader("⏱ Avg Trip Distance")
-st.metric("Average Distance", round(df["trip_distance"].mean(), 2))
-df["tpep_pickup_datetime"] = pd.to_datetime(df["tpep_pickup_datetime"])
-trips_by_day = df.groupby(df["tpep_pickup_datetime"].dt.date).size()
-
-st.line_chart(trips_by_day)
+st.write(df.head())
