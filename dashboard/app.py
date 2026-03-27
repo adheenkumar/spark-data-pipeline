@@ -5,21 +5,16 @@ import os   # ✅ ADD HERE
 st.title("🚕 Taxi Data Dashboard")
 
 @st.cache_data
-def load_data():   # ✅ REPLACE your existing function with this
-    path = "../data/processed/taxi_data"
+def load_data():
+    path = "data/processed/taxi_data"
 
-    st.write("Current working dir:", os.getcwd())
-    st.write(
-        "Files here:",
-        os.listdir("../data/processed") if os.path.exists("../data/processed") else "No folder"
-    )
+    if os.path.exists(path):
+        return pd.read_parquet(path)
 
-    if not os.path.exists(path):
-        st.error(f"Path not found: {path}")
-        return pd.DataFrame()
-
-    return pd.read_parquet(path)
-
+    st.warning("Using fallback dataset")
+    return pd.DataFrame({
+        "message": ["No data available"]
+    })
 
 # ✅ This stays as is
 df = load_data()
