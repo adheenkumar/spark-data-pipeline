@@ -1,0 +1,111 @@
+variables:
+  GIT_DEPTH: "0"
+  GIT_STRATEGY: clone
+  PYSPARK_PYTHON: "python3"
+
+default:
+  tags:
+    - docker
+    
+stages:
+  - ingest
+  - transform
+  - quality
+  - load
+  - dashboard
+
+image: python:3.9-slim
+
+# -------------------------
+# INGEST
+# -------------------------
+ingestion_job:
+  stage: ingest
+  before_script:
+    - pip install -r requirements/ingestion.txt
+  script:
+    - python ingestion/ingest_taxi_data.py
+  artifacts:
+    paths:
+      - data/raw/
+
+# -------------------------
+# TRANSFORM
+# -------------------------
+transform_job:
+  stage: transform
+  needs:
+    - ingestion_job
+  before_script:
+    - apt-get update && apt-get install -y default-jdk
+    - export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+    - pip install --default-timeout=1000 -r requirements/transform.txt
+  script:
+    - python transformation/spark_transform.py
+  artifacts:
+    paths:
+      - data/processed/
+
+# -------------------------
+# DATA QUALITY
+# -------------------------
+quality_job:
+  stage: quality
+  needs:
+    - transform_job
+  before_script:
+    - pip install -r requirements/quality.txt
+  script:
+    - python quality/data_quality.py
+
+# -------------------------
+# LOAD (MySQL - LOCAL)
+# -------------------------
+load_job:
+  stage: load
+  image: python:3.9-slim
+
+  services:
+    - name: mysql:8.0
+      alias: mysql
+      command:
+        - --default-authentication-plugin=mysql_native_password
+ 
+  variables:
+    MYSQL_HOST: mysql
+    MYSQL_ROOT_PASSWORD: root
+    MYSQL_DATABASE: taxi_db
+
+  before_script:
+    - apt-get update && apt-get install -y default-mysql-client
+    - pip install -r requirements/load.txt
+
+    - |
+      echo "Waiting for MySQL..."
+      for i in {1..60}; do
+        if mysql -h "$MYSQL_HOST" -u root -p"$MYSQL_ROOT_PASSWORD" --ssl=0 -e "SELECT 1" >/dev/null 2>&1; then
+          echo "MySQL is ready"
+          break
+        fi
+        echo "Retry $i..."
+        sleep 2
+      done
+
+    - mysql -h "$MYSQL_HOST" -u root -p"$MYSQL_ROOT_PASSWORD" --ssl=0 -e "SHOW DATABASES;"
+
+  script:
+    - python warehouse/load_mysql.py
+
+# -------------------------
+# DASHBOARD
+# -------------------------
+dashboard_job:
+  stage: dashboard
+  needs:
+    - load_job
+  before_script:
+    - pip install -r requirements/dashboard.txt
+  script:
+  - streamlit run dashboard/app.py --server.headless true &
+  - sleep 5
+  - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501')"
